@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"time"
 
 	qdb "github.com/rqure/qdb/src"
 )
@@ -23,10 +22,8 @@ func main() {
 
 	dbWorker := qdb.NewDatabaseWorker(db)
 	leaderElectionWorker := qdb.NewLeaderElectionWorker(db)
-	clockWorker := NewClockWorker(db, 1*time.Second)
+	clockWorker := NewServiceManager(db)
 	schemaValidator := qdb.NewSchemaValidator(db)
-
-	schemaValidator.AddEntity("Root", "SchemaUpdateTrigger")
 	schemaValidator.AddEntity("SystemClock", "CurrentTime")
 
 	dbWorker.Signals.SchemaUpdated.Connect(qdb.Slot(schemaValidator.ValidationRequired))
