@@ -1,4 +1,4 @@
-module github.com/rqure/qclock
+module github.com/rqure/qsm
 
 go 1.21.6
 
