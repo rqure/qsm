@@ -22,7 +22,7 @@ func main() {
 
 	dbWorker := qdb.NewDatabaseWorker(db)
 	leaderElectionWorker := qdb.NewLeaderElectionWorker(db)
-	clockWorker := NewServiceManager(db)
+	serviceManager := NewServiceManager(db)
 	schemaValidator := qdb.NewSchemaValidator(db)
 	schemaValidator.AddEntity("SystemClock", "CurrentTime")
 
@@ -35,8 +35,8 @@ func main() {
 	dbWorker.Signals.Connected.Connect(qdb.Slot(leaderElectionWorker.OnDatabaseConnected))
 	dbWorker.Signals.Disconnected.Connect(qdb.Slot(leaderElectionWorker.OnDatabaseDisconnected))
 
-	leaderElectionWorker.Signals.BecameLeader.Connect(qdb.Slot(clockWorker.OnBecameLeader))
-	leaderElectionWorker.Signals.LosingLeadership.Connect(qdb.Slot(clockWorker.OnLostLeadership))
+	leaderElectionWorker.Signals.BecameLeader.Connect(qdb.Slot(serviceManager.OnBecameLeader))
+	leaderElectionWorker.Signals.LosingLeadership.Connect(qdb.Slot(serviceManager.OnLostLeadership))
 
 	// Create a new application configuration
 	config := qdb.ApplicationConfig{
@@ -44,7 +44,7 @@ func main() {
 		Workers: []qdb.IWorker{
 			dbWorker,
 			leaderElectionWorker,
-			clockWorker,
+			serviceManager,
 		},
 	}
 
