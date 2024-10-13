@@ -40,7 +40,7 @@ func main() {
 
 	// Create a new application configuration
 	config := qdb.ApplicationConfig{
-		Name: "clock",
+		Name: "qsm",
 		Workers: []qdb.IWorker{
 			dbWorker,
 			leaderElectionWorker,
