@@ -7,14 +7,21 @@ import (
 )
 
 type HeartbeatManager struct {
-	db       qdb.IDatabase
-	isLeader bool
+	db           qdb.IDatabase
+	isLeader     bool
+	ticker       *time.Ticker
+	loopInterval time.Duration
 }
 
 func NewServiceManager(db qdb.IDatabase) *HeartbeatManager {
 	return &HeartbeatManager{
-		db: db,
+		db:           db,
+		loopInterval: 5 * time.Second,
 	}
+}
+
+func (w *HeartbeatManager) SetLoopInterval(d time.Duration) {
+	w.loopInterval = d
 }
 
 func (w *HeartbeatManager) OnBecameLeader() {
@@ -26,11 +33,11 @@ func (w *HeartbeatManager) OnLostLeadership() {
 }
 
 func (w *HeartbeatManager) Init() {
-
+	w.ticker = time.NewTicker(w.loopInterval)
 }
 
 func (w *HeartbeatManager) Deinit() {
-
+	w.ticker.Stop()
 }
 
 func (w *HeartbeatManager) ManageHeartbeats() {
@@ -71,5 +78,10 @@ func (w *HeartbeatManager) DoWork() {
 		return
 	}
 
-	w.ManageHeartbeats()
+	select {
+	case <-w.ticker.C:
+		w.ManageHeartbeats()
+	default:
+		// Do nothing
+	}
 }

@@ -1,6 +1,6 @@
 
 # Build the application from source
-FROM golang:1.21.6 AS build-stage
+FROM golang:1.22 AS build-stage
 
 WORKDIR /app
 
