@@ -25,7 +25,7 @@ func main() {
 	serviceManager := NewServiceManager(db)
 	containerManager := NewContainerManager(db)
 	schemaValidator := qdb.NewSchemaValidator(db)
-	schemaValidator.AddEntity("Container", "ContainerName", "ContainerId", "ContainerImage", "IsLeader", "CreateTime", "ContainerState", "ContainerStatus", "MemoryUsage", "CPUUsage", "ResetTrigger")
+	schemaValidator.AddEntity("Container", "ContainerName", "ContainerId", "ContainerImage", "IsLeader", "CreateTime", "StartTime", "ContainerState", "ContainerStatus", "MemoryUsage", "CPUUsage", "ResetTrigger", "RestartContainers")
 
 	dbWorker.Signals.SchemaUpdated.Connect(qdb.Slot(schemaValidator.ValidationRequired))
 	dbWorker.Signals.Connected.Connect(qdb.Slot(schemaValidator.ValidationRequired))
