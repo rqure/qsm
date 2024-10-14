@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/docker/docker v27.3.1+incompatible
-	github.com/rqure/qdb v1.2.67
+	github.com/rqure/qdb v1.2.68
 )
 
 require (
