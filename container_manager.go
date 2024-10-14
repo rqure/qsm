@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -64,15 +65,16 @@ func (w *ContainerManager) ProcessContainerStats() {
 			entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
 				EntityType: "Container",
 				Conditions: []qdb.FieldConditionEval{
-					qdb.NewStringCondition().Where("Identifier").IsEqualTo(&qdb.String{Raw: n}),
+					qdb.NewStringCondition().Where("ContainerName").IsEqualTo(&qdb.String{Raw: n}),
 				},
 			})
 
 			for _, entity := range entities {
-				entity.GetField("Image").PushString(c.Image, qdb.PushIfNotEqual)
-				entity.GetField("State").PushString(c.State, qdb.PushIfNotEqual)
-				entity.GetField("Status").PushString(c.Status, qdb.PushIfNotEqual)
-				entity.GetField("CreateTime").PushTimestamp(time.Unix(c.Created, 0), qdb.PushIfNotEqual)
+				entity.GetField("ContainerId").PushString(c.ID, qdb.PushIfNotEqual)
+				entity.GetField("ContainerImage").PushString(c.Image, qdb.PushIfNotEqual)
+				entity.GetField("ContainerState").PushString(c.State, qdb.PushIfNotEqual)
+				entity.GetField("ContainerStatus").PushString(c.Status, qdb.PushIfNotEqual)
+				entity.GetField("CreateTime").PushTimestamp(c.Created, qdb.PushIfNotEqual)
 
 				func() {
 					stats, err := cli.ContainerStats(context.Background(), c.ID, false)
@@ -97,13 +99,23 @@ func (w *ContainerManager) ProcessContainerStats() {
 						cpuUsage := ((stat.CPUStats.CPUUsage.TotalUsage / stat.CPUStats.SystemUsage) * uint64(stat.CPUStats.OnlineCPUs)) * 100
 						entity.GetField("CPUUsage").PushInt(int64(cpuUsage), qdb.PushIfNotEqual)
 
-						// fmt.Printf("Memory Usage: %v / %v\n", stat.MemoryStats.Usage, stat.MemoryStats.Limit)
 						memoryUsage := stat.MemoryStats.Usage / (1024 * 1024)
 						entity.GetField("MemoryUsage").PushInt(int64(memoryUsage), qdb.PushIfNotEqual)
 					}
 				}()
 			}
 		}
+	}
+
+	entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
+		EntityType: "Container",
+	})
+
+	for _, entity := range entities {
+		isLeader := entity.GetField("ServiceReference->Leader").PullString() == entity.GetField("ContainerName").PullString()
+		isAvailable := strings.Contains(entity.GetField("ServiceReference->Candidates").PullString(), entity.GetField("ContainerName").GetString())
+		entity.GetField("IsLeader").PushBool(isLeader, qdb.PushIfNotEqual)
+		entity.GetField("IsAvailable").PushBool(isAvailable, qdb.PushIfNotEqual)
 	}
 }
 
