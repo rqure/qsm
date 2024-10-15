@@ -18,8 +18,7 @@ WORKDIR /
 
 COPY --from=build-stage /qapp /qapp
 
-RUN addgroup -S docker \
-&& adduser -S nonroot -G docker
+RUN addgroup -S docker && adduser -S nonroot -G docker
 
 USER nonroot:nonroot
 
