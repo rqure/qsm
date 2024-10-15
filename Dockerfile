@@ -1,4 +1,3 @@
-
 # Build the application from source
 FROM golang:1.22 AS build-stage
 
@@ -12,14 +11,16 @@ COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o /qapp
 
 # Deploy the application binary into a lean image
-FROM gcr.io/distroless/base-debian11 AS build-release-stage
+FROM debian:bullseye-slim AS build-release-stage
 
 WORKDIR /
 
 COPY --from=build-stage /qapp /qapp
 
-RUN addgroup -S docker && adduser -S nonroot -G docker
+# Add a non-root user and group
+RUN addgroup --system docker && adduser --system --ingroup docker nonroot
 
-USER nonroot:nonroot
+# Switch to the non-root user
+USER nonroot:docker
 
 ENTRYPOINT ["/qapp"]
