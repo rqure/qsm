@@ -125,6 +125,10 @@ func (w *ContainerManager) ProcessContainerStats() {
 			},
 		})
 
+		if len(entities) == 0 {
+			qdb.Warn("[ContainerManager::ProcessContainerStats] Container '%s' not found in database", inspect.Name)
+		}
+
 		for _, entity := range entities {
 			entity.GetField("ContainerId").PushString(c.ID, qdb.PushIfNotEqual)
 			entity.GetField("ContainerImage").PushString(c.Image, qdb.PushIfNotEqual)
