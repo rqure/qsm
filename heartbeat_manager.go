@@ -46,29 +46,9 @@ func (w *HeartbeatManager) ManageHeartbeats() {
 	})
 
 	for _, service := range services {
-		heartbeatTrigger := &qdb.DatabaseRequest{
-			Id:    service.GetId(),
-			Field: "HeartbeatTrigger",
-		}
-
-		w.db.Read([]*qdb.DatabaseRequest{heartbeatTrigger})
-
-		if !heartbeatTrigger.Success {
-			continue
-		}
-
-		heartbeatTime := heartbeatTrigger.WriteTime.GetRaw().AsTime()
-		if heartbeatTime.Add(qdb.LeaderLeaseTimeout).Before(time.Now()) {
-			leader := service.GetField("Leader")
-			candidates := service.GetField("Candidates")
-
-			if leader.PullString() != "" {
-				leader.PushString("")
-			}
-
-			if candidates.PullString() != "" {
-				candidates.PushString("")
-			}
+		if service.GetField("HeartbeatTrigger").PullWriteTime().Add(qdb.LeaderLeaseTimeout).Before(time.Now()) {
+			service.GetField("Leader").PushString("", qdb.PushIfNotEqual)
+			service.GetField("Candidates").PushString("", qdb.PushIfNotEqual)
 		}
 	}
 }
