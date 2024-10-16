@@ -59,8 +59,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/redis/go-redis/v9 v9.6.2 h1:w0uvkRbc9KpgD98zcvo5IrVUsn0lXpRMuhNgiHDJzdk=
 github.com/redis/go-redis/v9 v9.6.2/go.mod h1:0C0c6ycQsdpVNQpxb1njEQIqkx5UcsM8FJCQLgE9+RA=
-github.com/rqure/qdb v1.2.69 h1:g+v01KeC6eHk+qyJuZnG7wyBCV4KFLUQmgrbuImjweA=
-github.com/rqure/qdb v1.2.69/go.mod h1:WrmjdwRal3c/y5ZunFRkIS7t000ENT1O047AtkcINRA=
+github.com/rqure/qdb v1.2.70 h1:vg2n0MAvDeaLxqmjfjO07AVyVL+J2iEcB8fFTba8MpY=
+github.com/rqure/qdb v1.2.70/go.mod h1:07BpXIJJhPNTCvRmpyaJk5iETYmTZtL4wurh7B8UztY=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
