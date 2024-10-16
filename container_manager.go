@@ -19,13 +19,15 @@ type ContainerManager struct {
 	ticker             *time.Ticker
 	loopInterval       time.Duration
 	notificationTokens []qdb.INotificationToken
+	containerStatsCh   chan map[string]map[string]interface{}
 }
 
 func NewContainerManager(db qdb.IDatabase) *ContainerManager {
 	return &ContainerManager{
 		db:                 db,
-		loopInterval:       5 * time.Second,
+		loopInterval:       15 * time.Second,
 		notificationTokens: []qdb.INotificationToken{},
+		containerStatsCh:   make(chan map[string]map[string]interface{}, 10),
 	}
 }
 
@@ -98,7 +100,46 @@ func (w *ContainerManager) Deinit() {
 	w.ticker.Stop()
 }
 
-func (w *ContainerManager) ProcessContainerStats() {
+func (w *ContainerManager) UpdateContainerStats(statsByContainerName map[string]map[string]interface{}) {
+	for containerName, stat := range statsByContainerName {
+		entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
+			EntityType: "Container",
+			Conditions: []qdb.FieldConditionEval{
+				qdb.NewStringCondition().Where("ContainerName").IsEqualTo(&qdb.String{Raw: containerName}),
+			},
+		})
+
+		if len(entities) == 0 {
+			qdb.Warn("[ContainerManager::ProcessContainerStats] Container '%s' not found in database", containerName)
+		}
+
+		for _, entity := range entities {
+			entity.GetField("ContainerId").PushString(stat["ContainerId"], qdb.PushIfNotEqual)
+			entity.GetField("ContainerImage").PushString(stat["ContainerImage"], qdb.PushIfNotEqual)
+			entity.GetField("ContainerState").PushString(stat["ContainerState"], qdb.PushIfNotEqual)
+			if entity.GetField("StartTime").PushTimestamp(stat["StartTime"], qdb.PushIfNotEqual) {
+				for _, restartableContainerId := range strings.Split(entity.GetField("RestartContainers").PullString(), ",") {
+					if restartableContainerId == "" || w.db.GetEntity(restartableContainerId) == nil {
+						continue
+					}
+
+					restartableContainerEntity := qdb.NewEntity(w.db, restartableContainerId)
+					restartableContainerEntity.GetField("ResetTrigger").PushInt()
+				}
+			}
+			entity.GetField("ContainerStatus").PushString(stat["ContainerStatus"], qdb.PushIfNotEqual)
+			entity.GetField("CreateTime").PushTimestamp(stat["CreateTime"], qdb.PushIfNotEqual)
+
+			entity.GetField("CPUUsage").PushInt(stat["CPUUsage"], qdb.PushIfNotEqual)
+
+			entity.GetField("MemoryUsage").PushInt(stat["MemoryUsage"], qdb.PushIfNotEqual)
+		}
+	}
+}
+
+func (w *ContainerManager) FindContainerStats() {
+	statsByContainerName := make(map[string]map[string]interface{})
+
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		qdb.Error("[ContainerManager::ProcessContainerStats] Failed to create docker client: %v", err)
@@ -118,64 +159,45 @@ func (w *ContainerManager) ProcessContainerStats() {
 			continue
 		}
 
-		entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
-			EntityType: "Container",
-			Conditions: []qdb.FieldConditionEval{
-				qdb.NewStringCondition().Where("ContainerName").IsEqualTo(&qdb.String{Raw: inspect.Name}),
-			},
-		})
-
-		if len(entities) == 0 {
-			qdb.Warn("[ContainerManager::ProcessContainerStats] Container '%s' not found in database", inspect.Name)
+		statsByContainerName[inspect.Name] = map[string]interface{}{
+			"ContainerId":     c.ID,
+			"ContainerImage":  c.Image,
+			"ContainerState":  inspect.State.Status,
+			"StartTime":       inspect.State.StartedAt,
+			"ContainerStatus": c.Status,
+			"CreateTime":      c.Created,
 		}
 
-		for _, entity := range entities {
-			entity.GetField("ContainerId").PushString(c.ID, qdb.PushIfNotEqual)
-			entity.GetField("ContainerImage").PushString(c.Image, qdb.PushIfNotEqual)
-			entity.GetField("ContainerState").PushString(inspect.State.Status, qdb.PushIfNotEqual)
-			if entity.GetField("StartTime").PushTimestamp(inspect.State.StartedAt, qdb.PushIfNotEqual) {
-				for _, restartableContainerId := range strings.Split(entity.GetField("RestartContainers").PullString(), ",") {
-					if restartableContainerId == "" || w.db.GetEntity(restartableContainerId) == nil {
-						continue
+		func() {
+			stats, err := cli.ContainerStats(context.Background(), c.ID, false)
+			if err != nil {
+				qdb.Error("[ContainerManager::ProcessContainerStats] Failed to get container stats: %v", err)
+				return
+			}
+			defer stats.Body.Close()
+
+			var stat container.StatsResponse
+			decoder := json.NewDecoder(stats.Body)
+			for {
+				if err := decoder.Decode(&stat); err != nil {
+					if err == io.EOF {
+						break
 					}
 
-					restartableContainerEntity := qdb.NewEntity(w.db, restartableContainerId)
-					restartableContainerEntity.GetField("ResetTrigger").PushInt()
-				}
-			}
-			entity.GetField("ContainerStatus").PushString(c.Status, qdb.PushIfNotEqual)
-			entity.GetField("CreateTime").PushTimestamp(c.Created, qdb.PushIfNotEqual)
-
-			func() {
-				stats, err := cli.ContainerStats(context.Background(), c.ID, false)
-				if err != nil {
-					qdb.Error("[ContainerManager::ProcessContainerStats] Failed to get container stats: %v", err)
+					qdb.Error("[ContainerManager::ProcessContainerStats] Failed to decode container stats: %v", err)
 					return
 				}
-				defer stats.Body.Close()
 
-				var stat container.StatsResponse
-				decoder := json.NewDecoder(stats.Body)
-				for {
-					if err := decoder.Decode(&stat); err != nil {
-						if err == io.EOF {
-							break
-						}
-
-						qdb.Error("[ContainerManager::ProcessContainerStats] Failed to decode container stats: %v", err)
-						return
-					}
-
-					cpuUsage := ((stat.CPUStats.CPUUsage.TotalUsage / stat.CPUStats.SystemUsage) * uint64(stat.CPUStats.OnlineCPUs)) * 100
-					entity.GetField("CPUUsage").PushInt(int64(cpuUsage), qdb.PushIfNotEqual)
-
-					memoryUsage := stat.MemoryStats.Usage / (1024 * 1024)
-					entity.GetField("MemoryUsage").PushInt(int64(memoryUsage), qdb.PushIfNotEqual)
-				}
-			}()
-		}
+				statsByContainerName[inspect.Name]["CPUUsage"] = ((stat.CPUStats.CPUUsage.TotalUsage / stat.CPUStats.SystemUsage) * uint64(stat.CPUStats.OnlineCPUs)) * 100
+				statsByContainerName[inspect.Name]["MemoryUsage"] = stat.MemoryStats.Usage / (1024 * 1024)
+			}
+		}()
 	}
 
+	w.containerStatsCh <- statsByContainerName
+}
+
+func (w *ContainerManager) UpdateContainerAvailability() {
 	entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
 		EntityType: "Container",
 	})
@@ -196,7 +218,11 @@ func (w *ContainerManager) DoWork() {
 
 	select {
 	case <-w.ticker.C:
-		w.ProcessContainerStats()
+		go w.FindContainerStats()
+
+		w.UpdateContainerAvailability()
+	case statByContainerName := <-w.containerStatsCh:
+		w.UpdateContainerStats(statByContainerName)
 	default:
 		// Do nothing
 	}
