@@ -204,8 +204,20 @@ func (w *ContainerManager) UpdateContainerAvailability() {
 
 	for _, entity := range entities {
 		containerNameField := entity.GetField("ContainerName")
-		isLeader := entity.GetField("ServiceReference->Leader").PullString() == containerNameField.PullString()
-		isAvailable := strings.Contains(entity.GetField("ServiceReference->Candidates").PullString(), containerNameField.GetString())
+		isLeader := strings.Contains(containerNameField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
+
+		isAvailable := false
+		for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").PullString(), ",") {
+			if candidate == "" {
+				continue
+			}
+
+			if strings.Contains(containerNameField.GetString(), candidate) {
+				isAvailable = true
+				break
+			}
+		}
+
 		entity.GetField("IsLeader").PushBool(isLeader, qdb.PushIfNotEqual)
 		entity.GetField("IsAvailable").PushBool(isAvailable, qdb.PushIfNotEqual)
 	}
