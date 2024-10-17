@@ -188,8 +188,8 @@ func (w *ContainerManager) FindContainerStats() {
 					return
 				}
 
-				statsByContainerName[inspect.Name]["CPUUsage"] = ((stat.CPUStats.CPUUsage.TotalUsage / stat.CPUStats.SystemUsage) * uint64(stat.CPUStats.OnlineCPUs)) * 100
-				statsByContainerName[inspect.Name]["MemoryUsage"] = stat.MemoryStats.Usage / (1024 * 1024)
+				statsByContainerName[inspect.Name]["CPUUsage"] = ((float64(stat.CPUStats.CPUUsage.TotalUsage) / float64(stat.CPUStats.SystemUsage)) * float64(stat.CPUStats.OnlineCPUs)) * 100.0
+				statsByContainerName[inspect.Name]["MemoryUsage"] = float64(stat.MemoryStats.Usage) / (1024 * 1024)
 			}
 		}()
 	}
