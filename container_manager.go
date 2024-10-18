@@ -172,6 +172,12 @@ func (w *ContainerManager) FindContainerStats() {
 			"MACAddress":      inspect.NetworkSettings.MacAddress,
 		}
 
+		networkName := c.HostConfig.NetworkMode
+		if network, ok := c.NetworkSettings.Networks[networkName]; ok {
+			statsByContainerName[inspect.Name]["IPAddress"] = network.IPAddress
+			statsByContainerName[inspect.Name]["MACAddress"] = network.MacAddress
+		}
+
 		func() {
 			stats, err := cli.ContainerStats(context.Background(), c.ID, false)
 			if err != nil {
@@ -211,13 +217,12 @@ func (w *ContainerManager) UpdateContainerAvailability() {
 
 	for _, entity := range entities {
 		containerNameField := entity.GetField("ContainerName")
-		isLeader := strings.Contains(containerNameField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
 
 		ipAddress := entity.GetField("IPAddress").PullString()
 		macAddress := entity.GetField("MACAddress").PullString()
 
 		if _, ok := ipAddresses[ipAddress]; !ok {
-			ipAddresses[ipAddress] = containerNameField.GetString()
+			ipAddresses[ipAddress] = containerNameField.PullString()
 		} else {
 			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate IP address '%s' found for containers '%s' and '%s'", ipAddress, ipAddresses[ipAddress], containerNameField.GetString())
 		}
@@ -228,13 +233,15 @@ func (w *ContainerManager) UpdateContainerAvailability() {
 			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate MAC address '%s' found for containers '%s' and '%s'", macAddress, macAddresses[macAddress], containerNameField.GetString())
 		}
 
+		containerIdField := entity.GetField("ContainerId")
+		isLeader := strings.Contains(containerIdField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
 		isAvailable := false
 		for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").PullString(), ",") {
 			if candidate == "" {
 				continue
 			}
 
-			if strings.Contains(containerNameField.GetString(), candidate) {
+			if strings.Contains(containerIdField.GetString(), candidate) {
 				isAvailable = true
 				break
 			}
