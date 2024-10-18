@@ -131,8 +131,8 @@ func (w *ContainerManager) UpdateContainerStats(statsByContainerName map[string]
 			}
 			entity.GetField("ContainerStatus").PushString(stat["ContainerStatus"], qdb.PushIfNotEqual)
 			entity.GetField("CreateTime").PushTimestamp(stat["CreateTime"], qdb.PushIfNotEqual)
-			entity.GetField("CPUUsage").PushInt(stat["CPUUsage"], qdb.PushIfNotEqual)
-			entity.GetField("MemoryUsage").PushInt(stat["MemoryUsage"], qdb.PushIfNotEqual)
+			entity.GetField("CPUUsage").PushFloat(stat["CPUUsage"], qdb.PushIfNotEqual)
+			entity.GetField("MemoryUsage").PushFloat(stat["MemoryUsage"], qdb.PushIfNotEqual)
 			entity.GetField("MACAddress").PushString(stat["MACAddress"], qdb.PushIfNotEqual)
 			entity.GetField("IPAddress").PushString(stat["IPAddress"], qdb.PushIfNotEqual)
 		}
