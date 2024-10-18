@@ -72,17 +72,19 @@ func (w *ContainerManager) ProcessNotification(notification *qdb.DatabaseNotific
 }
 
 func (w *ContainerManager) onResetTrigger(notification *qdb.DatabaseNotification) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		qdb.Error("[ContainerManager::ProcessNotification] Failed to create docker client: %v", err)
-		return
-	}
-	defer cli.Close()
-
 	containerName := qdb.ValueCast[*qdb.String](notification.Context[0].Value).Raw
 	containerId := qdb.ValueCast[*qdb.String](notification.Context[1].Value).Raw
 
 	go func() {
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err != nil {
+			qdb.Error("[ContainerManager::ProcessNotification] Failed to create docker client: %v", err)
+			return
+		}
+		defer cli.Close()
+
+		<-time.After(1 * time.Minute)
+
 		err = cli.ContainerRestart(context.Background(), containerId, container.StopOptions{})
 		if err != nil {
 			qdb.Error("[ContainerManager::ProcessNotification] Failed to restart container %s: %v", containerName, err)
@@ -129,9 +131,7 @@ func (w *ContainerManager) UpdateContainerStats(statsByContainerName map[string]
 			}
 			entity.GetField("ContainerStatus").PushString(stat["ContainerStatus"], qdb.PushIfNotEqual)
 			entity.GetField("CreateTime").PushTimestamp(stat["CreateTime"], qdb.PushIfNotEqual)
-
 			entity.GetField("CPUUsage").PushInt(stat["CPUUsage"], qdb.PushIfNotEqual)
-
 			entity.GetField("MemoryUsage").PushInt(stat["MemoryUsage"], qdb.PushIfNotEqual)
 		}
 	}
@@ -189,7 +189,7 @@ func (w *ContainerManager) FindContainerStats() {
 				}
 
 				statsByContainerName[inspect.Name]["CPUUsage"] = ((float64(stat.CPUStats.CPUUsage.TotalUsage) / float64(stat.CPUStats.SystemUsage)) * float64(stat.CPUStats.OnlineCPUs)) * 100.0
-				statsByContainerName[inspect.Name]["MemoryUsage"] = float64(stat.MemoryStats.Usage) / (1024 * 1024)
+				statsByContainerName[inspect.Name]["MemoryUsage"] = float64(stat.MemoryStats.Usage) / float64(1024*1024)
 			}
 		}()
 	}
