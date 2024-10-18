@@ -133,6 +133,8 @@ func (w *ContainerManager) UpdateContainerStats(statsByContainerName map[string]
 			entity.GetField("CreateTime").PushTimestamp(stat["CreateTime"], qdb.PushIfNotEqual)
 			entity.GetField("CPUUsage").PushInt(stat["CPUUsage"], qdb.PushIfNotEqual)
 			entity.GetField("MemoryUsage").PushInt(stat["MemoryUsage"], qdb.PushIfNotEqual)
+			entity.GetField("MACAddress").PushString(stat["MACAddress"], qdb.PushIfNotEqual)
+			entity.GetField("IPAddress").PushString(stat["IPAddress"], qdb.PushIfNotEqual)
 		}
 	}
 }
@@ -204,9 +206,27 @@ func (w *ContainerManager) UpdateContainerAvailability() {
 		EntityType: "Container",
 	})
 
+	ipAddresses := make(map[string]string)
+	macAddresses := make(map[string]string)
+
 	for _, entity := range entities {
 		containerNameField := entity.GetField("ContainerName")
 		isLeader := strings.Contains(containerNameField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
+
+		ipAddress := entity.GetField("IPAddress").PullString()
+		macAddress := entity.GetField("MACAddress").PullString()
+
+		if _, ok := ipAddresses[ipAddress]; !ok {
+			ipAddresses[ipAddress] = containerNameField.GetString()
+		} else {
+			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate IP address '%s' found for containers '%s' and '%s'", ipAddress, ipAddresses[ipAddress], containerNameField.GetString())
+		}
+
+		if _, ok := macAddresses[macAddress]; !ok {
+			macAddresses[macAddress] = containerNameField.GetString()
+		} else {
+			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate MAC address '%s' found for containers '%s' and '%s'", macAddress, macAddresses[macAddress], containerNameField.GetString())
+		}
 
 		isAvailable := false
 		for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").PullString(), ",") {
