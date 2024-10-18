@@ -166,6 +166,8 @@ func (w *ContainerManager) FindContainerStats() {
 			"StartTime":       inspect.State.StartedAt,
 			"ContainerStatus": c.Status,
 			"CreateTime":      c.Created,
+			"IPAddress":       inspect.NetworkSettings.IPAddress,
+			"MACAddress":      inspect.NetworkSettings.MacAddress,
 		}
 
 		func() {
