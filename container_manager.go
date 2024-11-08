@@ -233,17 +233,21 @@ func (w *ContainerManager) UpdateContainerAvailability() {
 			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate MAC address '%s' found for containers '%s' and '%s'", macAddress, macAddresses[macAddress], containerNameField.GetString())
 		}
 
-		containerIdField := entity.GetField("ContainerId")
-		isLeader := strings.Contains(containerIdField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
 		isAvailable := false
-		for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").PullString(), ",") {
-			if candidate == "" {
-				continue
-			}
+		isLeader := false
 
-			if strings.Contains(containerIdField.GetString(), candidate) {
-				isAvailable = true
-				break
+		containerIdField := entity.GetField("ContainerId")
+		if entity.GetField("ServiceReference").PullString() != "" {
+			isLeader = strings.Contains(containerIdField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
+			for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").PullString(), ",") {
+				if candidate == "" {
+					continue
+				}
+
+				if strings.Contains(containerIdField.GetString(), candidate) {
+					isAvailable = true
+					break
+				}
 			}
 		}
 
