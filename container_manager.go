@@ -147,6 +147,7 @@ func (w *ContainerManager) FindContainerStats() {
 		qdb.Error("[ContainerManager::ProcessContainerStats] Failed to create docker client: %v", err)
 		return
 	}
+	defer cli.Close()
 
 	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
 	if err != nil {
