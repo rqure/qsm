@@ -99,7 +99,7 @@ func (w *ContainerManager) onResetTrigger(ctx context.Context, n data.Notificati
 
 		<-time.After(1 * time.Minute)
 
-		err = cli.ContainerRestart(context.Background(), containerId, container.StopOptions{})
+		err = cli.ContainerRestart(ctx, containerId, container.StopOptions{})
 		if err != nil {
 			log.Error("Failed to restart container %s: %v", containerName, err)
 		} else {
@@ -145,7 +145,7 @@ func (w *ContainerManager) UpdateContainerStats(ctx context.Context, statsByCont
 	multi.Commit(ctx)
 }
 
-func (w *ContainerManager) FindContainerStats() {
+func (w *ContainerManager) FindContainerStats(ctx context.Context) {
 	statsByContainerName := make(map[string]map[string]interface{})
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -155,14 +155,14 @@ func (w *ContainerManager) FindContainerStats() {
 	}
 	defer cli.Close()
 
-	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
+	containers, err := cli.ContainerList(ctx, container.ListOptions{})
 	if err != nil {
 		log.Error("Failed to list containers: %v", err)
 		return
 	}
 
 	for _, c := range containers {
-		inspect, err := cli.ContainerInspect(context.Background(), c.ID)
+		inspect, err := cli.ContainerInspect(ctx, c.ID)
 		if err != nil {
 			log.Error("Failed to inspect container %s: %v", c.ID, err)
 			continue
@@ -186,7 +186,7 @@ func (w *ContainerManager) FindContainerStats() {
 		}
 
 		func() {
-			stats, err := cli.ContainerStats(context.Background(), c.ID, false)
+			stats, err := cli.ContainerStats(ctx, c.ID, false)
 			if err != nil {
 				log.Error("Failed to get container stats: %v", err)
 				return
@@ -267,7 +267,7 @@ func (w *ContainerManager) DoWork(ctx context.Context) {
 
 	select {
 	case <-w.ticker.C:
-		go w.FindContainerStats()
+		go w.FindContainerStats(ctx)
 
 		w.UpdateContainerAvailability(ctx)
 	case statByContainerName := <-w.containerStatsCh:
