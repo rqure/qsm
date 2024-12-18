@@ -1,21 +1,26 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	qdb "github.com/rqure/qdb/src"
+	"github.com/rqure/qlib/pkg/app"
+	"github.com/rqure/qlib/pkg/data"
+	"github.com/rqure/qlib/pkg/data/binding"
+	"github.com/rqure/qlib/pkg/data/query"
 )
 
 type HeartbeatManager struct {
-	db           qdb.IDatabase
+	store        data.Store
 	isLeader     bool
 	ticker       *time.Ticker
 	loopInterval time.Duration
 }
 
-func NewServiceManager(db qdb.IDatabase) *HeartbeatManager {
+func NewServiceManager(store data.Store) *HeartbeatManager {
 	return &HeartbeatManager{
-		db:           db,
+		store:        store,
 		loopInterval: 5 * time.Second,
 	}
 }
@@ -24,43 +29,54 @@ func (w *HeartbeatManager) SetLoopInterval(d time.Duration) {
 	w.loopInterval = d
 }
 
-func (w *HeartbeatManager) OnBecameLeader() {
+func (w *HeartbeatManager) OnBecameLeader(context.Context) {
 	w.isLeader = true
 }
 
-func (w *HeartbeatManager) OnLostLeadership() {
+func (w *HeartbeatManager) OnLostLeadership(context.Context) {
 	w.isLeader = false
 }
 
-func (w *HeartbeatManager) Init() {
+func (w *HeartbeatManager) Init(context.Context, app.Handle) {
 	w.ticker = time.NewTicker(w.loopInterval)
 }
 
-func (w *HeartbeatManager) Deinit() {
+func (w *HeartbeatManager) Deinit(context.Context) {
 	w.ticker.Stop()
 }
 
-func (w *HeartbeatManager) ManageHeartbeats() {
-	services := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
-		EntityType: "Service",
-	})
+func (w *HeartbeatManager) ManageHeartbeats(ctx context.Context) {
+	multi := binding.NewMulti(w.store)
+	services := EntityBindingArray(query.New(multi).ForType("Service").Execute(ctx)).AsMap()
+
+	var heartbeatFieldMap = make(map[string]data.FieldBinding)
+	for _, service := range services {
+		heartbeatTrigger := service.GetField("HeartbeatTrigger")
+		heartbeatTrigger.ReadValue(ctx)
+		heartbeatFieldMap[service.GetId()] = heartbeatTrigger
+	}
+
+	multi.Commit(ctx)
 
 	for _, service := range services {
-		if service.GetField("HeartbeatTrigger").PullWriteTime().Add(qdb.LeaderLeaseTimeout).Before(time.Now()) {
-			service.GetField("Leader").PushString("", qdb.PushIfNotEqual)
-			service.GetField("Candidates").PushString("", qdb.PushIfNotEqual)
+		heartbeatTrigger := heartbeatFieldMap[service.GetId()]
+		if heartbeatTrigger.GetWriteTime().Add(qdb.LeaderLeaseTimeout).Before(time.Now()) {
+			service.GetField("Leader").WriteString(ctx, "", data.WriteChanges)
+			service.GetField("Candidates").WriteString(ctx, "", data.WriteChanges)
 		}
 	}
+
+	multi.Commit(ctx)
 }
 
-func (w *HeartbeatManager) DoWork() {
+func (w *HeartbeatManager) DoWork(ctx context.Context) {
 	if !w.isLeader {
 		return
 	}
 
 	select {
 	case <-w.ticker.C:
-		w.ManageHeartbeats()
+		w.ManageHeartbeats(ctx)
 	default:
 		// Do nothing
 	}

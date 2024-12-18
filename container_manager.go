@@ -10,23 +10,38 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 
-	qdb "github.com/rqure/qdb/src"
+	"github.com/rqure/qlib/pkg/app"
+	"github.com/rqure/qlib/pkg/data"
+	"github.com/rqure/qlib/pkg/data/binding"
+	"github.com/rqure/qlib/pkg/data/notification"
+	"github.com/rqure/qlib/pkg/data/query"
+	"github.com/rqure/qlib/pkg/log"
 )
 
+type EntityBindingArray []data.EntityBinding
+
+func (a EntityBindingArray) AsMap() map[string]data.EntityBinding {
+	m := make(map[string]data.EntityBinding)
+	for _, b := range a {
+		m[b.GetId()] = b
+	}
+	return m
+}
+
 type ContainerManager struct {
-	db                 qdb.IDatabase
+	store              data.Store
 	isLeader           bool
 	ticker             *time.Ticker
 	loopInterval       time.Duration
-	notificationTokens []qdb.INotificationToken
+	notificationTokens []data.NotificationToken
 	containerStatsCh   chan map[string]map[string]interface{}
 }
 
-func NewContainerManager(db qdb.IDatabase) *ContainerManager {
+func NewContainerManager(store data.Store) *ContainerManager {
 	return &ContainerManager{
-		db:                 db,
+		store:              store,
 		loopInterval:       15 * time.Second,
-		notificationTokens: []qdb.INotificationToken{},
+		notificationTokens: []data.NotificationToken{},
 		containerStatsCh:   make(chan map[string]map[string]interface{}, 10),
 	}
 }
@@ -35,50 +50,49 @@ func (w *ContainerManager) SetLoopInterval(d time.Duration) {
 	w.loopInterval = d
 }
 
-func (w *ContainerManager) OnBecameLeader() {
+func (w *ContainerManager) OnBecameLeader(ctx context.Context) {
 	w.isLeader = true
 
-	w.notificationTokens = append(w.notificationTokens, w.db.Notify(&qdb.DatabaseNotificationConfig{
-		Type:  "Container",
-		Field: "ResetTrigger",
-		ContextFields: []string{
-			"ContainerName",
-			"ContainerId",
-		},
-	}, qdb.NewNotificationCallback(w.ProcessNotification)))
+	w.notificationTokens = append(w.notificationTokens, w.store.Notify(
+		ctx,
+		notification.NewConfig().
+			SetEntityType("Container").
+			SetFieldName("ResetTrigger").
+			SetContextFields([]string{"ContainerName", "ContainerId"}),
+		notification.NewCallback(w.ProcessNotification)))
 }
 
-func (w *ContainerManager) OnLostLeadership() {
+func (w *ContainerManager) OnLostLeadership(ctx context.Context) {
 	w.isLeader = false
 
 	for _, token := range w.notificationTokens {
-		token.Unbind()
+		token.Unbind(ctx)
 	}
 
-	w.notificationTokens = []qdb.INotificationToken{}
+	w.notificationTokens = []data.NotificationToken{}
 }
 
-func (w *ContainerManager) ProcessNotification(notification *qdb.DatabaseNotification) {
+func (w *ContainerManager) ProcessNotification(ctx context.Context, n data.Notification) {
 	if !w.isLeader {
 		return
 	}
 
-	qdb.Debug("[ContainerManager::ProcessNotification] Received notification: %v", notification)
+	log.Debug("Received notification: %v", n)
 
-	switch notification.Current.Name {
+	switch n.GetCurrent().GetFieldName() {
 	case "ResetTrigger":
-		w.onResetTrigger(notification)
+		w.onResetTrigger(ctx, n)
 	}
 }
 
-func (w *ContainerManager) onResetTrigger(notification *qdb.DatabaseNotification) {
-	containerName := qdb.ValueCast[*qdb.String](notification.Context[0].Value).Raw
-	containerId := qdb.ValueCast[*qdb.String](notification.Context[1].Value).Raw
+func (w *ContainerManager) onResetTrigger(ctx context.Context, n data.Notification) {
+	containerName := n.GetContext(0).GetValue().GetString()
+	containerId := n.GetContext(1).GetValue().GetString()
 
 	go func() {
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		if err != nil {
-			qdb.Error("[ContainerManager::ProcessNotification] Failed to create docker client: %v", err)
+			log.Error("Failed to create docker client: %v", err)
 			return
 		}
 		defer cli.Close()
@@ -87,56 +101,48 @@ func (w *ContainerManager) onResetTrigger(notification *qdb.DatabaseNotification
 
 		err = cli.ContainerRestart(context.Background(), containerId, container.StopOptions{})
 		if err != nil {
-			qdb.Error("[ContainerManager::ProcessNotification] Failed to restart container %s: %v", containerName, err)
+			log.Error("Failed to restart container %s: %v", containerName, err)
 		} else {
-			qdb.Info("[ContainerManager::ProcessNotification] Container restarted: %v", containerName)
+			log.Info("Container restarted: %v", containerName)
 		}
 	}()
 }
 
-func (w *ContainerManager) Init() {
+func (w *ContainerManager) Init(context.Context, app.Handle) {
 	w.ticker = time.NewTicker(w.loopInterval)
 }
 
-func (w *ContainerManager) Deinit() {
+func (w *ContainerManager) Deinit(context.Context) {
 	w.ticker.Stop()
 }
 
-func (w *ContainerManager) UpdateContainerStats(statsByContainerName map[string]map[string]interface{}) {
-	for containerName, stat := range statsByContainerName {
-		entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
-			EntityType: "Container",
-			Conditions: []qdb.FieldConditionEval{
-				qdb.NewStringCondition().Where("ContainerName").IsEqualTo(&qdb.String{Raw: containerName}),
-			},
-		})
+func (w *ContainerManager) UpdateContainerStats(ctx context.Context, statsByContainerName map[string]map[string]interface{}) {
+	multi := binding.NewMulti(w.store)
 
-		if len(entities) == 0 {
-			qdb.Warn("[ContainerManager::ProcessContainerStats] Container '%s' not found in database", containerName)
+	entities := EntityBindingArray(query.New(multi).
+		ForType("Container").
+		Execute(ctx)).AsMap()
+
+	for containerName, stat := range statsByContainerName {
+		if entities[containerName] == nil {
+			continue
 		}
 
 		for _, entity := range entities {
-			entity.GetField("ContainerId").PushString(stat["ContainerId"], qdb.PushIfNotEqual)
-			entity.GetField("ContainerImage").PushString(stat["ContainerImage"], qdb.PushIfNotEqual)
-			entity.GetField("ContainerState").PushString(stat["ContainerState"], qdb.PushIfNotEqual)
-			if entity.GetField("StartTime").PushTimestamp(stat["StartTime"], qdb.PushIfNotEqual) {
-				for _, restartableContainerId := range strings.Split(entity.GetField("RestartContainers").PullString(), ",") {
-					if restartableContainerId == "" || w.db.GetEntity(restartableContainerId) == nil {
-						continue
-					}
-
-					restartableContainerEntity := qdb.NewEntity(w.db, restartableContainerId)
-					restartableContainerEntity.GetField("ResetTrigger").PushInt()
-				}
-			}
-			entity.GetField("ContainerStatus").PushString(stat["ContainerStatus"], qdb.PushIfNotEqual)
-			entity.GetField("CreateTime").PushTimestamp(stat["CreateTime"], qdb.PushIfNotEqual)
-			entity.GetField("CPUUsage").PushFloat(stat["CPUUsage"], qdb.PushIfNotEqual)
-			entity.GetField("MemoryUsage").PushFloat(stat["MemoryUsage"], qdb.PushIfNotEqual)
-			entity.GetField("MACAddress").PushString(stat["MACAddress"], qdb.PushIfNotEqual)
-			entity.GetField("IPAddress").PushString(stat["IPAddress"], qdb.PushIfNotEqual)
+			entity.GetField("ContainerId").WriteString(ctx, stat["ContainerId"], data.WriteChanges)
+			entity.GetField("ContainerImage").WriteString(ctx, stat["ContainerImage"], data.WriteChanges)
+			entity.GetField("ContainerState").WriteString(ctx, stat["ContainerState"], data.WriteChanges)
+			entity.GetField("StartTime").WriteTimestamp(ctx, stat["StartTime"], data.WriteChanges)
+			entity.GetField("ContainerStatus").WriteString(ctx, stat["ContainerStatus"], data.WriteChanges)
+			entity.GetField("CreateTime").WriteTimestamp(ctx, stat["CreateTime"], data.WriteChanges)
+			entity.GetField("CPUUsage").WriteFloat(ctx, stat["CPUUsage"], data.WriteChanges)
+			entity.GetField("MemoryUsage").WriteFloat(ctx, stat["MemoryUsage"], data.WriteChanges)
+			entity.GetField("MACAddress").WriteString(ctx, stat["MACAddress"], data.WriteChanges)
+			entity.GetField("IPAddress").WriteString(ctx, stat["IPAddress"], data.WriteChanges)
 		}
 	}
+
+	multi.Commit(ctx)
 }
 
 func (w *ContainerManager) FindContainerStats() {
@@ -144,21 +150,21 @@ func (w *ContainerManager) FindContainerStats() {
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		qdb.Error("[ContainerManager::ProcessContainerStats] Failed to create docker client: %v", err)
+		log.Error("Failed to create docker client: %v", err)
 		return
 	}
 	defer cli.Close()
 
 	containers, err := cli.ContainerList(context.Background(), container.ListOptions{})
 	if err != nil {
-		qdb.Error("[ContainerManager::ProcessContainerStats] Failed to list containers: %v", err)
+		log.Error("Failed to list containers: %v", err)
 		return
 	}
 
 	for _, c := range containers {
 		inspect, err := cli.ContainerInspect(context.Background(), c.ID)
 		if err != nil {
-			qdb.Error("[ContainerManager::ProcessContainerStats] Failed to inspect container %s: %v", c.ID, err)
+			log.Error("Failed to inspect container %s: %v", c.ID, err)
 			continue
 		}
 
@@ -182,7 +188,7 @@ func (w *ContainerManager) FindContainerStats() {
 		func() {
 			stats, err := cli.ContainerStats(context.Background(), c.ID, false)
 			if err != nil {
-				qdb.Error("[ContainerManager::ProcessContainerStats] Failed to get container stats: %v", err)
+				log.Error("Failed to get container stats: %v", err)
 				return
 			}
 			defer stats.Body.Close()
@@ -195,7 +201,7 @@ func (w *ContainerManager) FindContainerStats() {
 						break
 					}
 
-					qdb.Error("[ContainerManager::ProcessContainerStats] Failed to decode container stats: %v", err)
+					log.Error("Failed to decode container stats: %v", err)
 					return
 				}
 
@@ -208,39 +214,36 @@ func (w *ContainerManager) FindContainerStats() {
 	w.containerStatsCh <- statsByContainerName
 }
 
-func (w *ContainerManager) UpdateContainerAvailability() {
-	entities := qdb.NewEntityFinder(w.db).Find(qdb.SearchCriteria{
-		EntityType: "Container",
-	})
+func (w *ContainerManager) UpdateContainerAvailability(ctx context.Context) {
+	entities := query.New(w.store).ForType("Container").Execute(ctx)
 
 	ipAddresses := make(map[string]string)
 	macAddresses := make(map[string]string)
 
 	for _, entity := range entities {
 		containerNameField := entity.GetField("ContainerName")
-
-		ipAddress := entity.GetField("IPAddress").PullString()
-		macAddress := entity.GetField("MACAddress").PullString()
+		ipAddress := entity.GetField("IPAddress").ReadString(ctx)
+		macAddress := entity.GetField("MACAddress").ReadString(ctx)
 
 		if _, ok := ipAddresses[ipAddress]; !ok {
-			ipAddresses[ipAddress] = containerNameField.PullString()
+			ipAddresses[ipAddress] = containerNameField.ReadString(ctx)
 		} else {
-			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate IP address '%s' found for containers '%s' and '%s'", ipAddress, ipAddresses[ipAddress], containerNameField.GetString())
+			log.Warn("Duplicate IP address '%s' found for containers '%s' and '%s'", ipAddress, ipAddresses[ipAddress], containerNameField.GetString())
 		}
 
 		if _, ok := macAddresses[macAddress]; !ok {
 			macAddresses[macAddress] = containerNameField.GetString()
 		} else {
-			qdb.Warn("[ContainerManager::UpdateContainerAvailability] Duplicate MAC address '%s' found for containers '%s' and '%s'", macAddress, macAddresses[macAddress], containerNameField.GetString())
+			log.Warn("Duplicate MAC address '%s' found for containers '%s' and '%s'", macAddress, macAddresses[macAddress], containerNameField.GetString())
 		}
 
 		isAvailable := false
 		isLeader := false
 
 		containerIdField := entity.GetField("ContainerId")
-		if entity.GetField("ServiceReference").PullString() != "" {
-			isLeader = strings.Contains(containerIdField.PullString(), entity.GetField("ServiceReference->Leader").PullString())
-			for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").PullString(), ",") {
+		if entity.GetField("ServiceReference").ReadString(ctx) != "" {
+			isLeader = strings.Contains(containerIdField.ReadString(ctx), entity.GetField("ServiceReference->Leader").ReadString(ctx))
+			for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").ReadString(ctx), ",") {
 				if candidate == "" {
 					continue
 				}
@@ -252,12 +255,12 @@ func (w *ContainerManager) UpdateContainerAvailability() {
 			}
 		}
 
-		entity.GetField("IsLeader").PushBool(isLeader, qdb.PushIfNotEqual)
-		entity.GetField("IsAvailable").PushBool(isAvailable, qdb.PushIfNotEqual)
+		entity.GetField("IsLeader").WriteBool(ctx, isLeader, data.WriteChanges)
+		entity.GetField("IsAvailable").WriteBool(ctx, isAvailable, data.WriteChanges)
 	}
 }
 
-func (w *ContainerManager) DoWork() {
+func (w *ContainerManager) DoWork(ctx context.Context) {
 	if !w.isLeader {
 		return
 	}
@@ -266,9 +269,9 @@ func (w *ContainerManager) DoWork() {
 	case <-w.ticker.C:
 		go w.FindContainerStats()
 
-		w.UpdateContainerAvailability()
+		w.UpdateContainerAvailability(ctx)
 	case statByContainerName := <-w.containerStatsCh:
-		w.UpdateContainerStats(statByContainerName)
+		w.UpdateContainerStats(ctx, statByContainerName)
 	default:
 		// Do nothing
 	}

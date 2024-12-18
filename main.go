@@ -3,59 +3,46 @@ package main
 import (
 	"os"
 
-	qdb "github.com/rqure/qdb/src"
+	"github.com/rqure/qlib/pkg/app"
+	"github.com/rqure/qlib/pkg/app/workers"
+	"github.com/rqure/qlib/pkg/data/store"
 )
 
 func getDatabaseAddress() string {
-	addr := os.Getenv("QDB_ADDR")
+	addr := os.Getenv("Q_ADDR")
 	if addr == "" {
-		addr = "redis:6379"
+		addr = "ws://webgateway:20000/ws"
 	}
 
 	return addr
 }
 
 func main() {
-	db := qdb.NewRedisDatabase(qdb.RedisDatabaseConfig{
+	s := store.NewWeb(store.WebConfig{
 		Address: getDatabaseAddress(),
 	})
 
-	dbWorker := qdb.NewDatabaseWorker(db)
-	leaderElectionWorker := qdb.NewLeaderElectionWorker(db)
-	serviceManager := NewServiceManager(db)
-	containerManager := NewContainerManager(db)
-	schemaValidator := qdb.NewSchemaValidator(db)
-	schemaValidator.AddEntity("Container", "ContainerName", "ContainerId", "ContainerImage", "IsLeader", "CreateTime", "StartTime", "ContainerState", "ContainerStatus", "MemoryUsage", "CPUUsage", "ResetTrigger", "RestartContainers", "MACAddress", "IPAddress")
+	storeWorker := workers.NewStore(s)
+	leadershipWorker := workers.NewLeadership(s)
+	serviceManager := NewServiceManager(s)
+	containerManager := NewContainerManager(s)
 
-	dbWorker.Signals.SchemaUpdated.Connect(qdb.Slot(schemaValidator.ValidationRequired))
-	dbWorker.Signals.Connected.Connect(qdb.Slot(schemaValidator.ValidationRequired))
-	leaderElectionWorker.AddAvailabilityCriteria(func() bool {
-		return dbWorker.IsConnected() && schemaValidator.IsValid()
-	})
+	schemaValidator := leadershipWorker.GetEntityFieldValidator()
+	schemaValidator.RegisterEntityFields("Container", "ContainerName", "ContainerId", "ContainerImage", "IsLeader", "CreateTime", "StartTime", "ContainerState", "ContainerStatus", "MemoryUsage", "CPUUsage", "ResetTrigger", "RestartContainers", "MACAddress", "IPAddress")
 
-	dbWorker.Signals.Connected.Connect(qdb.Slot(leaderElectionWorker.OnDatabaseConnected))
-	dbWorker.Signals.Disconnected.Connect(qdb.Slot(leaderElectionWorker.OnDatabaseDisconnected))
+	storeWorker.Connected.Connect(leadershipWorker.OnStoreConnected)
+	storeWorker.Disconnected.Connect(leadershipWorker.OnStoreDisconnected)
 
-	leaderElectionWorker.Signals.BecameLeader.Connect(qdb.Slot(serviceManager.OnBecameLeader))
-	leaderElectionWorker.Signals.LosingLeadership.Connect(qdb.Slot(serviceManager.OnLostLeadership))
+	leadershipWorker.BecameLeader().Connect(serviceManager.OnBecameLeader)
+	leadershipWorker.LosingLeadership().Connect(serviceManager.OnLostLeadership)
 
-	leaderElectionWorker.Signals.BecameLeader.Connect(qdb.Slot(containerManager.OnBecameLeader))
-	leaderElectionWorker.Signals.LosingLeadership.Connect(qdb.Slot(containerManager.OnLostLeadership))
+	leadershipWorker.BecameLeader().Connect(containerManager.OnBecameLeader)
+	leadershipWorker.LosingLeadership().Connect(containerManager.OnLostLeadership)
 
-	// Create a new application configuration
-	config := qdb.ApplicationConfig{
-		Name: "qsm",
-		Workers: []qdb.IWorker{
-			dbWorker,
-			leaderElectionWorker,
-			serviceManager,
-			containerManager,
-		},
-	}
-
-	// Create a new application
-	app := qdb.NewApplication(config)
-
-	// Execute the application
-	app.Execute()
+	a := app.NewApplication("qsm")
+	a.AddWorker(storeWorker)
+	a.AddWorker(leadershipWorker)
+	a.AddWorker(serviceManager)
+	a.AddWorker(containerManager)
+	a.Execute()
 }
