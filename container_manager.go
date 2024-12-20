@@ -119,27 +119,40 @@ func (w *ContainerManager) Deinit(context.Context) {
 func (w *ContainerManager) UpdateContainerStats(ctx context.Context, statsByContainerName map[string]map[string]interface{}) {
 	multi := binding.NewMulti(w.store)
 
-	entities := EntityBindingArray(query.New(multi).
+	entityById := EntityBindingArray(query.New(multi).
 		ForType("Container").
 		Execute(ctx)).AsMap()
 
+	var containerNameByEntityId = make(map[string]data.FieldBinding)
+	for entityId, entity := range entityById {
+		containerNameByEntityId[entityId] = entity.GetField("ContainerName")
+		containerNameByEntityId[entityId].ReadValue(ctx)
+	}
+	multi.Commit(ctx)
+
+	var entityByContainerName = make(map[string]data.EntityBinding)
+	for entityId, entity := range entityById {
+		if containerName, ok := containerNameByEntityId[entityId]; ok {
+			entityByContainerName[containerName.GetString()] = entity
+		}
+	}
+
 	for containerName, stat := range statsByContainerName {
-		if entities[containerName] == nil {
+		if entityByContainerName[containerName] == nil {
 			continue
 		}
 
-		for _, entity := range entities {
-			entity.GetField("ContainerId").WriteString(ctx, stat["ContainerId"], data.WriteChanges)
-			entity.GetField("ContainerImage").WriteString(ctx, stat["ContainerImage"], data.WriteChanges)
-			entity.GetField("ContainerState").WriteString(ctx, stat["ContainerState"], data.WriteChanges)
-			entity.GetField("StartTime").WriteTimestamp(ctx, stat["StartTime"], data.WriteChanges)
-			entity.GetField("ContainerStatus").WriteString(ctx, stat["ContainerStatus"], data.WriteChanges)
-			entity.GetField("CreateTime").WriteTimestamp(ctx, stat["CreateTime"], data.WriteChanges)
-			entity.GetField("CPUUsage").WriteFloat(ctx, stat["CPUUsage"], data.WriteChanges)
-			entity.GetField("MemoryUsage").WriteFloat(ctx, stat["MemoryUsage"], data.WriteChanges)
-			entity.GetField("MACAddress").WriteString(ctx, stat["MACAddress"], data.WriteChanges)
-			entity.GetField("IPAddress").WriteString(ctx, stat["IPAddress"], data.WriteChanges)
-		}
+		entity := entityByContainerName[containerName]
+		entity.GetField("ContainerId").WriteString(ctx, stat["ContainerId"], data.WriteChanges)
+		entity.GetField("ContainerImage").WriteString(ctx, stat["ContainerImage"], data.WriteChanges)
+		entity.GetField("ContainerState").WriteString(ctx, stat["ContainerState"], data.WriteChanges)
+		entity.GetField("StartTime").WriteTimestamp(ctx, stat["StartTime"], data.WriteChanges)
+		entity.GetField("ContainerStatus").WriteString(ctx, stat["ContainerStatus"], data.WriteChanges)
+		entity.GetField("CreateTime").WriteTimestamp(ctx, stat["CreateTime"], data.WriteChanges)
+		entity.GetField("CPUUsage").WriteFloat(ctx, stat["CPUUsage"], data.WriteChanges)
+		entity.GetField("MemoryUsage").WriteFloat(ctx, stat["MemoryUsage"], data.WriteChanges)
+		entity.GetField("MACAddress").WriteString(ctx, stat["MACAddress"], data.WriteChanges)
+		entity.GetField("IPAddress").WriteString(ctx, stat["IPAddress"], data.WriteChanges)
 	}
 
 	multi.Commit(ctx)
