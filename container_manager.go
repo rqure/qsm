@@ -58,7 +58,7 @@ func (w *ContainerManager) OnBecameLeader(ctx context.Context) {
 		notification.NewConfig().
 			SetEntityType("Container").
 			SetFieldName("ResetTrigger").
-			SetContextFields([]string{"ContainerName", "ContainerId"}),
+			SetContextFields("ContainerName", "ContainerId"),
 		notification.NewCallback(w.ProcessNotification)))
 }
 
