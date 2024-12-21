@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	qdb "github.com/rqure/qdb/src"
 	"github.com/rqure/qlib/pkg/app"
 	"github.com/rqure/qlib/pkg/data"
 	"github.com/rqure/qlib/pkg/data/binding"
 	"github.com/rqure/qlib/pkg/data/query"
+	"github.com/rqure/qlib/pkg/leadership/candidate"
 )
 
 type HeartbeatManager struct {
@@ -60,7 +60,7 @@ func (w *HeartbeatManager) ManageHeartbeats(ctx context.Context) {
 
 	for _, service := range services {
 		heartbeatTrigger := heartbeatFieldMap[service.GetId()]
-		if heartbeatTrigger.GetWriteTime().Add(qdb.LeaderLeaseTimeout).Before(time.Now()) {
+		if heartbeatTrigger.GetWriteTime().Add(candidate.LeaseTimeout).Before(time.Now()) {
 			service.GetField("Leader").WriteString(ctx, "", data.WriteChanges)
 			service.GetField("Candidates").WriteString(ctx, "", data.WriteChanges)
 		}

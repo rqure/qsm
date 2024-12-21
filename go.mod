@@ -4,8 +4,7 @@ go 1.22.7
 
 require (
 	github.com/docker/docker v27.3.1+incompatible
-	github.com/rqure/qdb v1.2.87
-	github.com/rqure/qlib v0.0.27
+	github.com/rqure/qlib v0.0.28
 )
 
 require (
@@ -30,6 +29,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/redis/go-redis/v9 v9.7.0 // indirect
+	github.com/stretchr/testify v1.10.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.57.0 // indirect
 	go.opentelemetry.io/otel v1.32.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.31.0 // indirect
