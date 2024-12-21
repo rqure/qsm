@@ -97,7 +97,7 @@ func (w *ContainerManager) onResetTrigger(ctx context.Context, n data.Notificati
 		}
 		defer cli.Close()
 
-		<-time.After(1 * time.Minute)
+		<-time.After(1 * time.Second)
 
 		err = cli.ContainerRestart(ctx, containerId, container.StopOptions{})
 		if err != nil {

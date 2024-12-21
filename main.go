@@ -28,7 +28,7 @@ func main() {
 	containerManager := NewContainerManager(s)
 
 	schemaValidator := leadershipWorker.GetEntityFieldValidator()
-	schemaValidator.RegisterEntityFields("Container", "ContainerName", "ContainerId", "ContainerImage", "IsLeader", "CreateTime", "StartTime", "ContainerState", "ContainerStatus", "MemoryUsage", "CPUUsage", "ResetTrigger", "RestartContainers", "MACAddress", "IPAddress")
+	schemaValidator.RegisterEntityFields("Container", "ContainerName", "ContainerId", "ContainerImage", "IsLeader", "CreateTime", "StartTime", "ContainerState", "ContainerStatus", "MemoryUsage", "CPUUsage", "ResetTrigger", "MACAddress", "IPAddress")
 
 	storeWorker.Connected.Connect(leadershipWorker.OnStoreConnected)
 	storeWorker.Disconnected.Connect(leadershipWorker.OnStoreDisconnected)
