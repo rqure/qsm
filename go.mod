@@ -4,7 +4,7 @@ go 1.22.7
 
 require (
 	github.com/docker/docker v27.4.1+incompatible
-	github.com/rqure/qlib v0.0.30
+	github.com/rqure/qlib v0.0.31
 )
 
 require (
