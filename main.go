@@ -8,7 +8,7 @@ import (
 	"github.com/rqure/qlib/pkg/data/store"
 )
 
-func getDatabaseAddress() string {
+func getStoreAddress() string {
 	addr := os.Getenv("Q_ADDR")
 	if addr == "" {
 		addr = "ws://webgateway:20000/ws"
@@ -19,7 +19,7 @@ func getDatabaseAddress() string {
 
 func main() {
 	s := store.NewWeb(store.WebConfig{
-		Address: getDatabaseAddress(),
+		Address: getStoreAddress(),
 	})
 
 	storeWorker := workers.NewStore(s)
