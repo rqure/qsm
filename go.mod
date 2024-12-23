@@ -4,7 +4,7 @@ go 1.22.7
 
 require (
 	github.com/docker/docker v27.4.1+incompatible
-	github.com/rqure/qlib v0.0.32
+	github.com/rqure/qlib v0.0.33
 )
 
 require (
@@ -38,6 +38,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.33.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
-	google.golang.org/protobuf v1.36.0 // indirect
+	google.golang.org/protobuf v1.36.1 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
 )
