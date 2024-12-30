@@ -27,4 +27,6 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          tags: rqure/qsm:${{ github.ref_name }}
+          tags: |
+            rqure/qsm:${{ github.ref_name }}
+            rqure/qsm:latest
