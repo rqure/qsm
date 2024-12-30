@@ -119,9 +119,12 @@ func (w *ContainerManager) Deinit(context.Context) {
 func (w *ContainerManager) UpdateContainerStats(ctx context.Context, statsByContainerName map[string]map[string]interface{}) {
 	multi := binding.NewMulti(w.store)
 
-	entityById := EntityBindingArray(query.New(multi).
-		ForType("Container").
-		Execute(ctx)).AsMap()
+	entityById := EntityBindingArray(
+		query.New(multi).
+			Select().
+			From("Container").
+			Execute(ctx),
+	).AsMap()
 
 	var containerNameByEntityId = make(map[string]data.FieldBinding)
 	for entityId, entity := range entityById {
@@ -228,18 +231,21 @@ func (w *ContainerManager) FindContainerStats(ctx context.Context) {
 }
 
 func (w *ContainerManager) UpdateContainerAvailability(ctx context.Context) {
-	entities := query.New(w.store).ForType("Container").Execute(ctx)
+	entities := query.New(w.store).
+		Select("ContainerName", "IPAddress", "MACAddress", "ContainerId", "ServiceReference").
+		From("Container").
+		Execute(ctx)
 
 	ipAddresses := make(map[string]string)
 	macAddresses := make(map[string]string)
 
 	for _, entity := range entities {
 		containerNameField := entity.GetField("ContainerName")
-		ipAddress := entity.GetField("IPAddress").ReadString(ctx)
-		macAddress := entity.GetField("MACAddress").ReadString(ctx)
+		ipAddress := entity.GetField("IPAddress").GetString()
+		macAddress := entity.GetField("MACAddress").GetString()
 
 		if _, ok := ipAddresses[ipAddress]; !ok {
-			ipAddresses[ipAddress] = containerNameField.ReadString(ctx)
+			ipAddresses[ipAddress] = containerNameField.GetString()
 		} else {
 			log.Warn("Duplicate IP address '%s' found for containers '%s' and '%s'", ipAddress, ipAddresses[ipAddress], containerNameField.GetString())
 		}
@@ -254,8 +260,8 @@ func (w *ContainerManager) UpdateContainerAvailability(ctx context.Context) {
 		isLeader := false
 
 		containerIdField := entity.GetField("ContainerId")
-		if entity.GetField("ServiceReference").ReadString(ctx) != "" {
-			isLeader = strings.Contains(containerIdField.ReadString(ctx), entity.GetField("ServiceReference->Leader").ReadString(ctx))
+		if entity.GetField("ServiceReference").GetString() != "" {
+			isLeader = strings.Contains(containerIdField.GetString(), entity.GetField("ServiceReference->Leader").ReadString(ctx))
 			for _, candidate := range strings.Split(entity.GetField("ServiceReference->Candidates").ReadString(ctx), ",") {
 				if candidate == "" {
 					continue

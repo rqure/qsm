@@ -47,20 +47,15 @@ func (w *HeartbeatManager) Deinit(context.Context) {
 
 func (w *HeartbeatManager) ManageHeartbeats(ctx context.Context) {
 	multi := binding.NewMulti(w.store)
-	services := EntityBindingArray(query.New(multi).ForType("Service").Execute(ctx)).AsMap()
-
-	var heartbeatFieldMap = make(map[string]data.FieldBinding)
-	for _, service := range services {
-		heartbeatTrigger := service.GetField("HeartbeatTrigger")
-		heartbeatTrigger.ReadValue(ctx)
-		heartbeatFieldMap[service.GetId()] = heartbeatTrigger
-	}
-
-	multi.Commit(ctx)
+	services := EntityBindingArray(
+		query.New(multi).
+			Select("HeartbeatTrigger").
+			From("Service").
+			Execute(ctx),
+	).AsMap()
 
 	for _, service := range services {
-		heartbeatTrigger := heartbeatFieldMap[service.GetId()]
-		if heartbeatTrigger.GetWriteTime().Add(candidate.LeaseTimeout).Before(time.Now()) {
+		if service.GetField("HeartbeatTrigger").GetWriteTime().Add(candidate.LeaseTimeout).Before(time.Now()) {
 			service.GetField("Leader").WriteString(ctx, "", data.WriteChanges)
 			service.GetField("Candidates").WriteString(ctx, "", data.WriteChanges)
 		}
